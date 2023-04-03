@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+
+try:
+
+    import argparse
+    import json
+    import sys
+    import time
+    import subprocess
+    import shlex
+    import operator
+    import re
+    from itertools import groupby
+ 
+except ImportError as e:
+	print('error importing modules: ' + str(e))
+	exit(1)
+
+
+class LanRTT():
+
+    def __init__(self):
+         self.conntrack_subscription()
+
+    def conntrack_subscription(self):
+        #command = "conntrack -E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.13.232"
+        #print(shlex.split(command)) 10.152.46.129
+        self.syn_events = []
+        self.ack_events = []
+        command = "conntrack -E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.0.2 --mask-src 255.255.240.0"
+        regex = r"^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$"
+        process = subprocess.Popen(command, shell=True,stdout=subprocess.PIPE,encoding='utf8')
+        t_end = time.time() + 60 * 1
+        while time.time() < t_end:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                
+                if output.strip():
+                    matches = re.search(regex,output.strip())
+                    if matches:
+                        timestamp = f'{matches.group(1)}.{matches.group(2)}'
+                        self.new_event(timestamp,matches.group(3),matches.group(4),matches.group(5),matches.group(6),matches.group(7),matches.group(8),matches.group(9),matches.group(10),matches.group(11),matches.group(12))          
+                
+        rc = process.poll()
+
+        self.parse_results()
+
+
+    def new_event(self,timestamp,pkttype,origSrc,origDst,origSport,origDport,replySrc,replyDst,replySport,replyDsport,id):
+        args = f'{float(timestamp)} {pkttype} {origSrc} {origDst} {origSport} {origDport} {replySrc} {replyDst} {replySport} {replyDsport} {id}'
+        #self.mappings.append((float(timestamp),pkttype,origSrc,origDst,origSport,origDport,replySrc,replyDst,replySport,replyDsport,id))
+        if pkttype == 'SYN_RECV':
+            self.syn_events.append({'timestamp' : float(timestamp), 'pkttype' : pkttype, 'origSrc': origSrc, 'origDst': origDst, 'origSport': origSport, 'origDport': origDport, 'replySrc': replySrc, 'replyDst': replyDst, 'replySport': replySport, 'replyDport': replyDsport, 'id': id})
+        elif pkttype == 'ESTABLISHED':
+            self.ack_events.append({'timestamp' : float(timestamp), 'pkttype' : pkttype, 'origSrc': origSrc, 'origDst': origDst, 'origSport': origSport, 'origDport': origDport, 'replySrc': replySrc, 'replyDst': replyDst, 'replySport': replySport, 'replyDport': replyDsport, 'id': id})
+
+    def write_flows(self):
+        outfile = open("test.json", "w")
+        print(self.mappings)
+        flows = json.dump(self.mappings,outfile,indent=4)
+
+
+    def parse_results(self):
+        for syn in self.syn_events:
+            for ack in self.ack_events:
+                if (syn['id'] == ack['id']) and (syn['timestamp'] != ack['timestamp']):
+                    if (syn['origSrc'] == ack['origSrc']) and (syn['origDst'] == ack['origDst']) and (syn['origDst'] == ack['origDst']) and (syn['origSport'] == ack['origSport']) and (syn['origDport'] == ack['origDport']) and (syn['replySrc'] == ack['replySrc']) and (syn['replyDst'] == ack['replyDst']) and (syn['replySport'] == ack['replySport']) and (syn['replyDport'] == ack['replyDport']):
+                        delay = (float(ack['timestamp']) - float(syn['timestamp'])) * 1000
+                        flow = f"Flow matched: {delay} {ack['origSrc']} {ack['origDst']} {ack['origSport']} {ack['origDport']} {ack['replySrc']} {ack['replyDst']} {ack['replySport']} {ack['replyDport']} {ack['id']}"
+                        print(flow)
+            
+    def test_func(self):
+        self.flows = []
+        self.mappings.sort(key=lambda content: content['id'])
+        groups = groupby(self.mappings, lambda content: content['id'])
+        
+        for fl_id, group in groups:
+    
+                for content in group:
+                    print(content)
+                    self.flows.append({fl_id: content})
+
+            
+
+if __name__ == "__main__":
+
+    r = LanRTT()
