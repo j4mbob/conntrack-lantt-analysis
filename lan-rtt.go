@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
+	//"net/http"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -21,20 +23,42 @@ type Flows struct {
 }
 
 func main() {
-	//cmd := exec.Command("sh", "-c", "conntrack -E -e UPDATES -o timackamp,id -p tcp --orig-src 10.152.13.232")
 
-	network, subnetmask, daemon, pollTime, stdOutput := ArgParse()
+	network, subnetMask, continuous, pollTime, statsPeriod, stdOutput := ArgParse()
 
-	if daemon == true {
-		fmt.Println("running as daemon")
-	}
+	PollConntrack(network, subnetMask, continuous, pollTime, statsPeriod, stdOutput)
+
+}
+
+/*func PromExporter() {
+
+	http.Handle("/metrics", promhttp.Handler())
+	http.ListenAndServe(":1986", nil)
+
+	// not defined yet
+
+}*/
+
+func PollConntrack(network string, subnetMask string, continuous bool, pollTime int64, statsPeriod int, stdOutput bool) {
 
 	var regex = regexp.MustCompile(`^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$`)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(pollTime)*time.Second)
-	defer cancel()
-	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + network + " --mask-src " + subnetmask
+	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + network + " --mask-src " + subnetMask
+	var ctx context.Context
+	var cancel context.CancelFunc
+	var cmd *exec.Cmd
+
+	if !continuous {
+		fmt.Printf("Running for %v..\n", pollTime)
+		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(pollTime)*time.Second)
+		defer cancel()
+		cmd = exec.CommandContext(ctx, "conntrack", strings.Split(args, " ")...)
+	} else if continuous {
+		fmt.Printf("Running continuosly..\n")
+		cmd = exec.Command("conntrack", strings.Split(args, " ")...)
+
+	}
 	//args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.0.2 --mask-src 255.255.240.0"
-	cmd := exec.CommandContext(ctx, "conntrack", strings.Split(args, " ")...)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -48,6 +72,8 @@ func main() {
 	Flows := make([]Flows, 10)
 
 	scanner := bufio.NewScanner(stdout)
+
+	go ParseFlows(&Flows, statsPeriod)
 
 	for scanner.Scan() {
 		output := scanner.Text()
@@ -66,7 +92,16 @@ func main() {
 	}
 
 	fmt.Println("Polling finished")
-	CalculateAverages(&Flows)
+	//CalculateAverages(&Flows)
+
+}
+
+func ParseFlows(flows *[]Flows, statsPeriod int) {
+	// generates averages every 5 seconds
+	for {
+		time.Sleep(time.Duration(statsPeriod) * time.Second)
+		CalculateAverages(&flows)
+	}
 
 }
 
@@ -74,18 +109,18 @@ func ArgParse() (string, string, bool, int64, bool) {
 
 	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
 	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
-	daemonPtr := flag.Bool("daemon", false, "run as daemon")
-	pollTimePtr := flag.Int64("pollingtime", 600, "duration in seconds to poll for")
+	continuousPtr := flag.Bool("continuous", false, "run continuously")
+	pollTimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
 
 	flag.Parse()
 
-	return *networkPtr, *subnetPtr, *daemonPtr, *pollTimePtr, *outputPtr
+	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *outputPtr
 }
 
 func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, NewEventMap map[string]map[string]interface{}, flows *[]Flows, stdOutput bool) {
 
-	if stdOutput == true {
+	if stdOutput {
 		fmt.Printf("[%f] %v %v %v %v %v %v %v %v %v %v\n", timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flow_id)
 	}
 
@@ -132,17 +167,17 @@ func CalculateFlowRtt(syn_timestamp float64, ack_timestamp float64) float64 {
 	return delayTime
 }
 
-func CalculateAverages(flows *[]Flows) {
+func CalculateAverages(flows **[]Flows) {
 
 	var delayTotal float64
 	var mean float64
 	var flowCount int
 
-	for _, flow := range *flows {
+	for _, flow := range **flows {
 		delayTotal += flow.LanRTT
 	}
 
-	flowCount = len(*flows)
+	flowCount = len(**flows)
 
 	mean = delayTotal / float64(flowCount)
 
