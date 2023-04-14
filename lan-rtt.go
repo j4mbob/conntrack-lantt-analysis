@@ -43,6 +43,7 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 
 	var regex = regexp.MustCompile(`^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$`)
 	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + network + " --mask-src " + subnetMask
+	//args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.0.2 --mask-src 255.255.240.0"
 	var ctx context.Context
 	var cancel context.CancelFunc
 	var cmd *exec.Cmd
@@ -57,7 +58,6 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 		cmd = exec.Command("conntrack", strings.Split(args, " ")...)
 
 	}
-	//args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.0.2 --mask-src 255.255.240.0"
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -85,19 +85,26 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 			if s, err := strconv.ParseFloat(combineTimeStamps, 64); err == nil {
 				timestamp = s
 			}
+			if len(Flows) == 10 {
+				x := Flows[0]
+				Flows = Flows[1:]
+				fmt.Println(x)
+
+			}
 
 			NewEvent(timestamp, attr[3], attr[4], attr[5], attr[6], attr[7], attr[8], attr[9], attr[10], attr[11], attr[12], NewEventMap, &Flows, stdOutput)
 		}
 
 	}
 
+	fmt.Println(Flows)
 	fmt.Println("Polling finished")
 	//CalculateAverages(&Flows)
 
 }
 
 func ParseFlows(flows *[]Flows, statsPeriod int) {
-	// generates averages every 5 seconds
+	// generates averages every x seconds (defined by statsPeriod)
 	for {
 		time.Sleep(time.Duration(statsPeriod) * time.Second)
 		CalculateAverages(&flows)
@@ -105,17 +112,18 @@ func ParseFlows(flows *[]Flows, statsPeriod int) {
 
 }
 
-func ArgParse() (string, string, bool, int64, bool) {
+func ArgParse() (string, string, bool, int64, int, bool) {
 
 	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
 	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
 	continuousPtr := flag.Bool("continuous", false, "run continuously")
+	statsPeriodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
 	pollTimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
 
 	flag.Parse()
 
-	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *outputPtr
+	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *statsPeriodPtr, *outputPtr
 }
 
 func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, NewEventMap map[string]map[string]interface{}, flows *[]Flows, stdOutput bool) {
@@ -143,6 +151,10 @@ func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string,
 			lanrtt = CalculateFlowRtt(syn_timestamp, ack_timestamp)
 
 			*flows = append(*flows, Flows{FlowID: flow_id, SynTimestamp: syn_timestamp, AckTimestamp: ack_timestamp, LanRTT: lanrtt})
+			fmt.Println("Number of flows: ", len(*flows))
+
+			//}
+
 		}
 	} else {
 
