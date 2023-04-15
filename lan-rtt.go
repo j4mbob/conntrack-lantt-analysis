@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"log"
 
-	//"net/http"
+	"net/http"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Flows struct {
@@ -24,22 +28,32 @@ type Flows struct {
 
 func main() {
 
-	network, subnetMask, continuous, pollTime, statsPeriod, stdOutput := ArgParse()
+	network, subnetMask, continuous, pollTime, statsPeriod, bufferSize, stdOutput := ArgParse()
 
-	PollConntrack(network, subnetMask, continuous, pollTime, statsPeriod, stdOutput)
+	PollConntrack(network, subnetMask, continuous, pollTime, statsPeriod, bufferSize, stdOutput)
 
 }
 
-/*func PromExporter() {
+func PromExporter() prometheus.Gauge {
 
-	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":1986", nil)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":1986", nil)
+	}()
+
+	promEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lanRtt_queued",
+		Help: "lanRtt average value",
+	})
+
+	//prometheus.MustRegister(promEndpoint)
+	return promEndpoint
 
 	// not defined yet
 
-}*/
+}
 
-func PollConntrack(network string, subnetMask string, continuous bool, pollTime int64, statsPeriod int, stdOutput bool) {
+func PollConntrack(network string, subnetMask string, continuous bool, pollTime int64, statsPeriod int, bufferSize int, stdOutput bool) {
 
 	var regex = regexp.MustCompile(`^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$`)
 	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + network + " --mask-src " + subnetMask
@@ -85,10 +99,11 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 			if s, err := strconv.ParseFloat(combineTimeStamps, 64); err == nil {
 				timestamp = s
 			}
-			if len(Flows) == 10 {
-				x := Flows[0]
+
+			// simple ring buffer for flow events
+			if len(Flows) == bufferSize {
 				Flows = Flows[1:]
-				fmt.Println(x)
+				//fmt.Println(flow_id)
 
 			}
 
@@ -96,34 +111,37 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 		}
 
 	}
-
-	fmt.Println(Flows)
+	fmt.Println(len(NewEventMap))
+	//fmt.Println(Flows)
 	fmt.Println("Polling finished")
 	//CalculateAverages(&Flows)
 
 }
 
 func ParseFlows(flows *[]Flows, statsPeriod int) {
+
+	promInt := PromExporter()
 	// generates averages every x seconds (defined by statsPeriod)
 	for {
 		time.Sleep(time.Duration(statsPeriod) * time.Second)
-		CalculateAverages(&flows)
+		CalculateAverages(&flows, promInt)
 	}
 
 }
 
-func ArgParse() (string, string, bool, int64, int, bool) {
+func ArgParse() (string, string, bool, int64, int, int, bool) {
 
 	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
 	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
 	continuousPtr := flag.Bool("continuous", false, "run continuously")
+	buffersizePtr := flag.Int("buffersize", 1000, "number of events to buffer for calculations")
 	statsPeriodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
 	pollTimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
 
 	flag.Parse()
 
-	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *statsPeriodPtr, *outputPtr
+	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *statsPeriodPtr, *buffersizePtr, *outputPtr
 }
 
 func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, NewEventMap map[string]map[string]interface{}, flows *[]Flows, stdOutput bool) {
@@ -151,9 +169,7 @@ func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string,
 			lanrtt = CalculateFlowRtt(syn_timestamp, ack_timestamp)
 
 			*flows = append(*flows, Flows{FlowID: flow_id, SynTimestamp: syn_timestamp, AckTimestamp: ack_timestamp, LanRTT: lanrtt})
-			fmt.Println("Number of flows: ", len(*flows))
-
-			//}
+			delete(NewEventMap, flow_id)
 
 		}
 	} else {
@@ -179,7 +195,7 @@ func CalculateFlowRtt(syn_timestamp float64, ack_timestamp float64) float64 {
 	return delayTime
 }
 
-func CalculateAverages(flows **[]Flows) {
+func CalculateAverages(flows **[]Flows, promInt prometheus.Gauge) {
 
 	var delayTotal float64
 	var mean float64
@@ -192,6 +208,7 @@ func CalculateAverages(flows **[]Flows) {
 	flowCount = len(**flows)
 
 	mean = delayTotal / float64(flowCount)
+	promInt.Set(mean)
 
 	fmt.Printf("\ndelayTotal: %f", delayTotal)
 	fmt.Printf("\nflowcount: %d", flowCount)
