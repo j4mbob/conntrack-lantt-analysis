@@ -26,48 +26,85 @@ type Flows struct {
 	LanRTT       float64
 }
 
+type Args struct {
+	Network       string
+	Subnet        string
+	RunContinuous bool
+	BufferSize    int
+	StatsPeriod   int
+	PollTime      int64
+	PromPort      string
+	StdOut        bool
+}
+
 func main() {
 
-	network, subnetMask, continuous, pollTime, statsPeriod, bufferSize, stdOutput := ArgParse()
+	arguments := new(Args)
 
-	PollConntrack(network, subnetMask, continuous, pollTime, statsPeriod, bufferSize, stdOutput)
+	ArgParse(arguments)
+	PollConntrack(arguments)
 
 }
 
-func PromExporter() prometheus.Gauge {
+func ArgParse(arguments *Args) {
 
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":1986", nil)
-	}()
+	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
+	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
+	continuousPtr := flag.Bool("continuous", false, "run continuously")
+	buffersizePtr := flag.Int("buffersize", 1000, "number of events to buffer for calculations")
+	statsperiodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
+	polltimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
+	promportPtr := flag.String("promport", "1986", "port for prom exporter to listen on")
+	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
+
+	flag.Parse()
+
+	arguments.Network = *networkPtr
+	arguments.Subnet = *subnetPtr
+	arguments.RunContinuous = *continuousPtr
+	arguments.BufferSize = *buffersizePtr
+	arguments.StatsPeriod = *statsperiodPtr
+	arguments.PollTime = *polltimePtr
+	arguments.PromPort = *promportPtr
+	arguments.StdOut = *outputPtr
+}
+
+func PromExporter(promPort string) prometheus.Gauge {
+
+	reg := prometheus.NewRegistry()
 
 	promEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lanRtt_queued",
 		Help: "lanRtt average value",
 	})
 
-	//prometheus.MustRegister(promEndpoint)
-	return promEndpoint
+	reg.MustRegister(promEndpoint)
 
-	// not defined yet
+	go func(reg *prometheus.Registry) {
+		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+		log.Fatal(http.ListenAndServe(":"+promPort, nil))
+	}(reg)
+
+	return promEndpoint
 
 }
 
-func PollConntrack(network string, subnetMask string, continuous bool, pollTime int64, statsPeriod int, bufferSize int, stdOutput bool) {
+func PollConntrack(arguments *Args) {
 
 	var regex = regexp.MustCompile(`^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$`)
-	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + network + " --mask-src " + subnetMask
+	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + arguments.Network + " --mask-src " + arguments.Subnet
+	fmt.Println(args)
 	//args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src 10.152.0.2 --mask-src 255.255.240.0"
 	var ctx context.Context
 	var cancel context.CancelFunc
 	var cmd *exec.Cmd
 
-	if !continuous {
-		fmt.Printf("Running for %v..\n", pollTime)
-		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(pollTime)*time.Second)
+	if !arguments.RunContinuous {
+		fmt.Printf("Running for %v..\n", arguments.PollTime)
+		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(arguments.PollTime)*time.Second)
 		defer cancel()
 		cmd = exec.CommandContext(ctx, "conntrack", strings.Split(args, " ")...)
-	} else if continuous {
+	} else if arguments.RunContinuous {
 		fmt.Printf("Running continuosly..\n")
 		cmd = exec.Command("conntrack", strings.Split(args, " ")...)
 
@@ -87,7 +124,7 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 
 	scanner := bufio.NewScanner(stdout)
 
-	go ParseFlows(&Flows, statsPeriod)
+	go ParseFlows(&Flows, arguments.StatsPeriod, arguments.PromPort)
 
 	for scanner.Scan() {
 		output := scanner.Text()
@@ -101,26 +138,24 @@ func PollConntrack(network string, subnetMask string, continuous bool, pollTime 
 			}
 
 			// simple ring buffer for flow events
-			if len(Flows) == bufferSize {
+			if len(Flows) == arguments.BufferSize {
 				Flows = Flows[1:]
 				//fmt.Println(flow_id)
 
 			}
 
-			NewEvent(timestamp, attr[3], attr[4], attr[5], attr[6], attr[7], attr[8], attr[9], attr[10], attr[11], attr[12], NewEventMap, &Flows, stdOutput)
+			NewEvent(timestamp, attr[3], attr[4], attr[5], attr[6], attr[7], attr[8], attr[9], attr[10], attr[11], attr[12], NewEventMap, &Flows, arguments)
 		}
 
 	}
 	fmt.Println(len(NewEventMap))
-	//fmt.Println(Flows)
 	fmt.Println("Polling finished")
-	//CalculateAverages(&Flows)
 
 }
 
-func ParseFlows(flows *[]Flows, statsPeriod int) {
+func ParseFlows(flows *[]Flows, statsPeriod int, promPort string) {
 
-	promInt := PromExporter()
+	promInt := PromExporter(promPort)
 	// generates averages every x seconds (defined by statsPeriod)
 	for {
 		time.Sleep(time.Duration(statsPeriod) * time.Second)
@@ -129,24 +164,9 @@ func ParseFlows(flows *[]Flows, statsPeriod int) {
 
 }
 
-func ArgParse() (string, string, bool, int64, int, int, bool) {
+func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, NewEventMap map[string]map[string]interface{}, flows *[]Flows, arguments *Args) {
 
-	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
-	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
-	continuousPtr := flag.Bool("continuous", false, "run continuously")
-	buffersizePtr := flag.Int("buffersize", 1000, "number of events to buffer for calculations")
-	statsPeriodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
-	pollTimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
-	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
-
-	flag.Parse()
-
-	return *networkPtr, *subnetPtr, *continuousPtr, *pollTimePtr, *statsPeriodPtr, *buffersizePtr, *outputPtr
-}
-
-func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, NewEventMap map[string]map[string]interface{}, flows *[]Flows, stdOutput bool) {
-
-	if stdOutput {
+	if arguments.StdOut {
 		fmt.Printf("[%f] %v %v %v %v %v %v %v %v %v %v\n", timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flow_id)
 	}
 
