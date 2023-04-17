@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
-
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -27,14 +29,16 @@ type Flows struct {
 }
 
 type Args struct {
-	Network       string
-	Subnet        string
-	RunContinuous bool
-	BufferSize    int
-	StatsPeriod   int
-	PollTime      int64
-	PromPort      string
-	StdOut        bool
+	Network       string `json:"network"`
+	Subnet        string `json:"subnetmask"`
+	RunContinuous bool   `json:"runcontinuous"`
+	BufferSize    int    `json:"buffersize"`
+	StatsPeriod   int    `json:"statsperiod"`
+	PollTime      int64  `json:"pollingtime"`
+	PromPort      string `json:"promport"`
+	StdOut        bool   `json:"stdout"`
+	SSLCert       string `json:"sslcert"`
+	SSLKey        string `json:"sslkey"`
 }
 
 func main() {
@@ -56,25 +60,59 @@ func ArgParse(arguments *Args) {
 	polltimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	promportPtr := flag.String("promport", "1986", "port for prom exporter to listen on")
 	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
+	sslcertPtr := flag.String("sslcert", "", "path to SSL cert to use for prom exporter")
+	sslkeyPtr := flag.String("sslkey", "", "path to SSL priv key to use for prom exporter")
+	configPtr := flag.String("loadconfig", "none", "load json config file. defaults to lanrtt.json")
 
 	flag.Parse()
 
-	arguments.Network = *networkPtr
-	arguments.Subnet = *subnetPtr
-	arguments.RunContinuous = *continuousPtr
-	arguments.BufferSize = *buffersizePtr
-	arguments.StatsPeriod = *statsperiodPtr
-	arguments.PollTime = *polltimePtr
-	arguments.PromPort = *promportPtr
-	arguments.StdOut = *outputPtr
+	if *sslcertPtr == "" || *sslkeyPtr == "" {
+		if *configPtr != "none" {
+			LoadConfig(*configPtr, arguments)
+		} else {
+
+			fmt.Printf("SSL options missing. cant start\n")
+			os.Exit(1)
+		}
+
+	} else {
+
+		arguments.Network = *networkPtr
+		arguments.Subnet = *subnetPtr
+		arguments.RunContinuous = *continuousPtr
+		arguments.BufferSize = *buffersizePtr
+		arguments.StatsPeriod = *statsperiodPtr
+		arguments.PollTime = *polltimePtr
+		arguments.PromPort = *promportPtr
+		arguments.StdOut = *outputPtr
+		arguments.SSLCert = *sslcertPtr
+		arguments.SSLKey = *sslkeyPtr
+
+	}
 }
 
-func PromExporter(promPort string) prometheus.Gauge {
+func LoadConfig(configFile string, arguments *Args) {
+
+	jsonFile, err := os.Open(configFile)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+
+	}
+
+	defer jsonFile.Close()
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+	json.Unmarshal([]byte(byteValue), &arguments)
+
+}
+
+func PromExporter(promPort string, sslCert string, sslKey string) prometheus.Gauge {
 
 	reg := prometheus.NewRegistry()
 
 	promEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "lanRtt_queued",
+		Name: "lanRtt_mean_value",
 		Help: "lanRtt average value",
 	})
 
@@ -82,7 +120,7 @@ func PromExporter(promPort string) prometheus.Gauge {
 
 	go func(reg *prometheus.Registry) {
 		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-		log.Fatal(http.ListenAndServe(":"+promPort, nil))
+		log.Fatal(http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil))
 	}(reg)
 
 	return promEndpoint
@@ -124,7 +162,7 @@ func PollConntrack(arguments *Args) {
 
 	scanner := bufio.NewScanner(stdout)
 
-	go ParseFlows(&Flows, arguments.StatsPeriod, arguments.PromPort)
+	go ParseFlows(&Flows, arguments)
 
 	for scanner.Scan() {
 		output := scanner.Text()
@@ -137,10 +175,9 @@ func PollConntrack(arguments *Args) {
 				timestamp = s
 			}
 
-			// simple ring buffer for flow events
+			// simple ring buffer queue for flow events
 			if len(Flows) == arguments.BufferSize {
 				Flows = Flows[1:]
-				//fmt.Println(flow_id)
 
 			}
 
@@ -153,13 +190,13 @@ func PollConntrack(arguments *Args) {
 
 }
 
-func ParseFlows(flows *[]Flows, statsPeriod int, promPort string) {
+func ParseFlows(flows *[]Flows, arguments *Args) {
 
-	promInt := PromExporter(promPort)
+	promInt := PromExporter(arguments.PromPort, arguments.SSLCert, arguments.SSLKey)
 	// generates averages every x seconds (defined by statsPeriod)
 	for {
-		time.Sleep(time.Duration(statsPeriod) * time.Second)
-		CalculateAverages(&flows, promInt)
+		time.Sleep(time.Duration(arguments.StatsPeriod) * time.Second)
+		CalculateAverages(&flows, promInt, arguments)
 	}
 
 }
@@ -215,7 +252,7 @@ func CalculateFlowRtt(syn_timestamp float64, ack_timestamp float64) float64 {
 	return delayTime
 }
 
-func CalculateAverages(flows **[]Flows, promInt prometheus.Gauge) {
+func CalculateAverages(flows **[]Flows, promInt prometheus.Gauge, arguments *Args) {
 
 	var delayTotal float64
 	var mean float64
@@ -230,7 +267,10 @@ func CalculateAverages(flows **[]Flows, promInt prometheus.Gauge) {
 	mean = delayTotal / float64(flowCount)
 	promInt.Set(mean)
 
-	fmt.Printf("\ndelayTotal: %f", delayTotal)
-	fmt.Printf("\nflowcount: %d", flowCount)
-	fmt.Printf("\nlan-rtt: %f\n", mean)
+	if arguments.StdOut {
+
+		fmt.Printf("\ndelayTotal: %f", delayTotal)
+		fmt.Printf("\nflowcount: %d", flowCount)
+		fmt.Printf("\nlan-rtt: %f\n", mean)
+	}
 }
