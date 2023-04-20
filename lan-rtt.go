@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,23 +24,25 @@ import (
 
 type Flows struct {
 	FlowID       string
+	DeviceIP     string
 	SynTimestamp float64
 	AckTimestamp float64
 	LanRTT       float64
 }
 
 type Args struct {
-	Network       string `json:"network"`
-	Subnet        string `json:"subnetmask"`
-	RunContinuous bool   `json:"runcontinuous"`
-	BufferSize    int    `json:"buffersize"`
-	StatsPeriod   int    `json:"statsperiod"`
-	PollTime      int64  `json:"pollingtime"`
-	PromPort      string `json:"promport"`
-	StdOut        bool   `json:"stdout"`
-	SSLCert       string `json:"sslcert"`
-	SSLKey        string `json:"sslkey"`
-	NoSSL         bool   `json:"nossl"`
+	Network         string `json:"network"`
+	Subnet          string `json:"subnetmask"`
+	RunContinuous   bool   `json:"runcontinuous"`
+	BufferSize      int    `json:"buffersize"`
+	StatsPeriod     int    `json:"statsperiod"`
+	PollTime        int64  `json:"pollingtime"`
+	PromPort        string `json:"promport"`
+	ConntrackStdOut bool   `json:"conntrackstdout"`
+	StatsStdOut     bool   `json:"statsstdout"`
+	SSLCert         string `json:"sslcert"`
+	SSLKey          string `json:"sslkey"`
+	NoSSL           bool   `json:"nossl"`
 }
 
 func main() {
@@ -62,7 +65,8 @@ func ArgParse(arguments *Args) {
 	statsperiodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
 	polltimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	promportPtr := flag.String("promport", "1986", "port for prom exporter to listen on")
-	outputPtr := flag.Bool("output", false, "output conntrack updates to stdout")
+	conntrackoutputPtr := flag.Bool("conntrackoutput", false, "output conntrack updates to stdout")
+	statsoutputPtr := flag.Bool("statsoutput", false, "output stats updates to stdout")
 	sslcertPtr := flag.String("sslcert", "", "path to SSL cert to use for prom exporter")
 	sslkeyPtr := flag.String("sslkey", "", "path to SSL priv key to use for prom exporter")
 	nosslPtr := flag.Bool("nossl", false, "set to use HTTP and not HTTPS for Prom exporter")
@@ -73,7 +77,7 @@ func ArgParse(arguments *Args) {
 	// check if SSL args needed for Prom. Exporter exist
 
 	if *configPtr != "none" {
-		fmt.Printf("loading json config")
+		fmt.Printf("loading JSON config: %s\n", *configPtr)
 		LoadConfig(*configPtr, arguments)
 	} else {
 		if (*sslcertPtr == "" || *sslkeyPtr == "") && *nosslPtr == false {
@@ -87,13 +91,14 @@ func ArgParse(arguments *Args) {
 		arguments.StatsPeriod = *statsperiodPtr
 		arguments.PollTime = *polltimePtr
 		arguments.PromPort = *promportPtr
-		arguments.StdOut = *outputPtr
+		arguments.ConntrackStdOut = *conntrackoutputPtr
+		arguments.StatsStdOut = *statsoutputPtr
 		arguments.SSLCert = *sslcertPtr
 		arguments.SSLKey = *sslkeyPtr
 		arguments.NoSSL = *nosslPtr
 
 		fmt.Printf("loading cli arguments:\n")
-		fmt.Printf(" Network: %s\n Subnet Mask: %s\n Run Continuously: %v\n Buffer size: %v\n Stats Period: %v\n Polling Time: %v\n Prom Exporter Port: %v\n Display Output: %v\n SSL Cert: %v\n SSL Key: %v\n Non SSL: %v\n", arguments.Network, arguments.Subnet, arguments.RunContinuous, arguments.BufferSize, arguments.StatsPeriod, arguments.PollTime, arguments.PromPort, arguments.StdOut, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
+		fmt.Printf(" Network: %s\n Subnet Mask: %s\n Run Continuously: %v\n Buffer size: %v\n Stats Period: %v\n Polling Time: %v\n Prom Exporter Port: %v\n Display Conntrack Output: %v\n Display Stats Output: %v\n SSL Cert: %v\n SSL Key: %v\n Non SSL: %v\n", arguments.Network, arguments.Subnet, arguments.RunContinuous, arguments.BufferSize, arguments.StatsPeriod, arguments.PollTime, arguments.PromPort, arguments.ConntrackStdOut, arguments.StatsStdOut, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
 
 	}
 }
@@ -114,43 +119,10 @@ func LoadConfig(configFile string, arguments *Args) {
 
 }
 
-func PromExporter(promPort string, sslCert string, sslKey string, noSSL bool) (prometheus.Gauge, prometheus.Histogram) {
-
-	reg := prometheus.NewRegistry()
-
-	promMeanEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "lanRtt_mean_value",
-		Help: "lanRtt average value",
-	})
-
-	promHistoEndpoint := promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "lanRtt_histo_value",
-		Help:    "lanRtt Hiso values",
-		Buckets: prometheus.LinearBuckets(5, 10, 20),
-	})
-
-	reg.MustRegister(promMeanEndpoint)
-	reg.MustRegister(promHistoEndpoint)
-
-	go func(reg *prometheus.Registry) {
-		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-		if noSSL {
-			log.Fatal(http.ListenAndServe(":"+promPort, nil))
-
-		} else {
-			log.Fatal(http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil))
-		}
-		log.Fatal(http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil))
-	}(reg)
-
-	return promMeanEndpoint, promHistoEndpoint
-
-}
-
 func PollConntrack(arguments *Args) {
 
 	var regex = regexp.MustCompile(`^\[([0-9]+)\.([0-9]+) *\].*(SYN_RECV|ESTABLISHED) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) src=([^ ]+) dst=([^ ]+) sport=([^ ]+) dport=([^ ]+) (?:\[ASSURED\] )?id=([0-9]+)$`)
-	args := "-E -e UPDATES -o timestamp,id -p tcp --orig-src " + arguments.Network + " --mask-src " + arguments.Subnet
+	args := "-E -e UPDATES -o timestamp,id --buffer-size 1064960 -p tcp --orig-src " + arguments.Network + " --mask-src " + arguments.Subnet
 
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -169,23 +141,29 @@ func PollConntrack(arguments *Args) {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		fmt.Printf("std out error")
 		log.Fatal(err)
 	}
 	if err := cmd.Start(); err != nil {
+		fmt.Printf("start error")
 		log.Fatal(err)
 
 	}
 
 	EventMap := make(map[string]map[string]interface{})
+	DeviceFlows := map[string][]float64{}
 	Flows := make([]Flows, 10)
+
+	mux := &sync.Mutex{}
 
 	scanner := bufio.NewScanner(stdout)
 
 	// launch thread for constant average calculations
-	go ParseFlows(&Flows, arguments)
+	go ParseFlows(&Flows, DeviceFlows, arguments, mux)
 
 	for scanner.Scan() {
 		output := scanner.Text()
+		//fmt.Println(output)
 		matches := regex.FindAllStringSubmatch(output, -1)
 
 		for _, attr := range matches {
@@ -197,91 +175,114 @@ func PollConntrack(arguments *Args) {
 
 			// simple ring buffer queue for flow events
 			if len(Flows) == arguments.BufferSize {
+				mux.Lock()
 				Flows = Flows[1:]
+				mux.Unlock()
 
 			}
 
-			NewEvent(timestamp, attr[3], attr[4], attr[5], attr[6], attr[7], attr[8], attr[9], attr[10], attr[11], attr[12], EventMap, &Flows, arguments)
+			NewEvent(timestamp, attr[3], attr[4], attr[5], attr[6], attr[7], attr[8], attr[9], attr[10], attr[11], attr[12], EventMap, &Flows, DeviceFlows, arguments, mux)
+			//fmt.Println(EventMap)
 		}
 
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("wait error")
+		log.Fatal(err)
 	}
 	fmt.Println("Polling finished")
 
 }
 
-func ParseFlows(flows *[]Flows, arguments *Args) {
+func ParseFlows(flows *[]Flows, DeviceFlows map[string][]float64, arguments *Args, mux *sync.Mutex) {
 
-	promMean, promHisto := PromExporter(arguments.PromPort, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
+	promMean, promHisto, promAgMean, promAgHisto, promDeviceCount := PromExporter(arguments.PromPort, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
 	// generates averages every x seconds (defined by statsPeriod)
 	for {
 		time.Sleep(time.Duration(arguments.StatsPeriod) * time.Second)
-		CalculateAverages(&flows, promMean, promHisto, arguments)
+
+		// WORK OUT MEAN NOW FOR AGGREGATED DATA FLOWS IN DEVICEFLOWS
+		CalculateAverages(&flows, promMean, promHisto, arguments, mux)
+		CalculateAggregateAverages(DeviceFlows, promAgMean, promAgHisto, promDeviceCount, mux)
+		mux.Lock()
+		fmt.Println(len(DeviceFlows))
+		for k := range DeviceFlows {
+			delete(DeviceFlows, k)
+		}
+		mux.Unlock()
+
 	}
 
 }
 
-func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, EventMap map[string]map[string]interface{}, flows *[]Flows, arguments *Args) {
+func PromExporter(promPort string, sslCert string, sslKey string, noSSL bool) (prometheus.Gauge, prometheus.Histogram, prometheus.Gauge, prometheus.Histogram, prometheus.Gauge) {
 
-	if arguments.StdOut {
+	reg := prometheus.NewRegistry()
+
+	promMeanEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lanRtt_mean_value",
+		Help: "lanRtt average value",
+	})
+
+	promAgMeanEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lanRtt_aggregated_device_flows_mean_value",
+		Help: "lanRtt aggregated device flows average value",
+	})
+
+	promDeviceCountEndpoint := promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lanRtt_unique_device_flows_value",
+		Help: "lanRtt unique device flow count value",
+	})
+
+	promHistoEndpoint := promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lanRtt_flows_histo_value",
+		Help:    "lanRtt flows histo values",
+		Buckets: prometheus.LinearBuckets(5, 10, 20),
+	})
+
+	promAgHistoEndpoint := promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lanRtt_aggregated_device_flows_histo_value",
+		Help:    "lanRtt aggregatred device flows histo values",
+		Buckets: prometheus.LinearBuckets(5, 10, 20),
+	})
+
+	reg.MustRegister(promMeanEndpoint)
+	reg.MustRegister(promHistoEndpoint)
+	reg.MustRegister(promAgMeanEndpoint)
+	reg.MustRegister(promDeviceCountEndpoint)
+	reg.MustRegister(promAgHistoEndpoint)
+
+	go func(reg *prometheus.Registry) {
+		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+		if noSSL {
+			log.Fatal(http.ListenAndServe(":"+promPort, nil))
+
+		} else {
+			log.Fatal(http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil))
+		}
+		log.Fatal(http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil))
+	}(reg)
+
+	return promMeanEndpoint, promHistoEndpoint, promAgMeanEndpoint, promAgHistoEndpoint, promDeviceCountEndpoint
+
+}
+
+func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string, origSport string, origDport string, replySrc string, replyDst string, replySport string, replyDsport string, flow_id string, EventMap map[string]map[string]interface{}, flows *[]Flows, DeviceFlows map[string][]float64, arguments *Args, mux *sync.Mutex) {
+
+	if arguments.ConntrackStdOut {
 		fmt.Printf("[%f] %v %v %v %v %v %v %v %v %v %v\n", timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flow_id)
 	}
 
-	_, present := EventMap[flow_id]
+	//_, present := EventMap[flow_id]
 
 	var syn_timestamp float64
 	var ack_timestamp float64
 	var lanrtt float64
 
-	NewEventMap := make(map[string]interface{})
-	NewEventMap["timestamp"] = timestamp
-	NewEventMap["type"] = pkttype
-	NewEventMap["origSrc"] = origSrc
-	NewEventMap["origDst"] = origDst
-	NewEventMap["origSport"] = origSport
-	NewEventMap["origDport"] = origDport
-	NewEventMap["replySrc"] = replySrc
-	NewEventMap["replyDst"] = replyDst
-	NewEventMap["replySport"] = replySport
-	NewEventMap["replyDsport"] = replyDsport
-	NewEventMap["flow_id"] = flow_id
+	//NewEventMap := make(map[string]interface{})
 
-	if present {
-		if EventMap[flow_id]["origSrc"] == origSrc && EventMap[flow_id]["origDst"] == origDst && EventMap[flow_id]["origSport"] == origSport && EventMap[flow_id]["origDport"] == origDport && EventMap[flow_id]["replySrc"] == replySrc && EventMap[flow_id]["replyDst"] == replyDst && EventMap[flow_id]["replySport"] == replySport && EventMap[flow_id]["replyDsport"] == replyDsport {
-			// flow match found with existing events
-			if pkttype == "SYN_RECV" && EventMap[flow_id]["type"] == "ESTABLISHED" {
-
-				syn_timestamp = timestamp
-				ack_timestamp = EventMap[flow_id]["timestamp"].(float64)
-
-			} else if pkttype == "ESTABLISHED" && EventMap[flow_id]["type"] == "SYN_RECV" {
-
-				ack_timestamp = timestamp
-				syn_timestamp = EventMap[flow_id]["timestamp"].(float64)
-
-			} else if pkttype == "SYN_RECV" && EventMap[flow_id]["type"] == "SYN_RECV" {
-				// matches on a TCP retry, replace EventMap entry with newest SYN_RECV packet
-				EventMap[flow_id]["timestamp"] = timestamp
-				EventMap[flow_id]["type"] = pkttype
-				EventMap[flow_id]["origSrc"] = origSrc
-				EventMap[flow_id]["origDst"] = origDst
-				EventMap[flow_id]["origSport"] = origSport
-				EventMap[flow_id]["origDport"] = origDport
-				EventMap[flow_id]["replySrc"] = replySrc
-				EventMap[flow_id]["replyDst"] = replyDst
-				EventMap[flow_id]["replySport"] = replySport
-				EventMap[flow_id]["replyDsport"] = replyDsport
-
-			}
-
-			lanrtt = CalculateFlowRtt(syn_timestamp, ack_timestamp)
-
-			*flows = append(*flows, Flows{FlowID: flow_id, SynTimestamp: syn_timestamp, AckTimestamp: ack_timestamp, LanRTT: lanrtt})
-
-			// throw away matched event to avoid NewEventMap constantly growing with every new event
-			delete(EventMap, flow_id)
-
-		}
-	} else {
+	if pkttype == "SYN_RECV" {
 
 		EventMap[flow_id] = make(map[string]interface{})
 		EventMap[flow_id]["timestamp"] = timestamp
@@ -295,8 +296,35 @@ func NewEvent(timestamp float64, pkttype string, origSrc string, origDst string,
 		EventMap[flow_id]["replySport"] = replySport
 		EventMap[flow_id]["replyDsport"] = replyDsport
 
-	}
+	} else {
 
+		_, present := EventMap[flow_id]
+
+		if present {
+
+			if EventMap[flow_id]["origSrc"] == origSrc && EventMap[flow_id]["origDst"] == origDst && EventMap[flow_id]["origSport"] == origSport && EventMap[flow_id]["origDport"] == origDport && EventMap[flow_id]["replySrc"] == replySrc && EventMap[flow_id]["replyDst"] == replyDst && EventMap[flow_id]["replySport"] == replySport && EventMap[flow_id]["replyDsport"] == replyDsport {
+				ack_timestamp = timestamp
+				syn_timestamp = EventMap[flow_id]["timestamp"].(float64)
+
+				lanrtt = CalculateFlowRtt(syn_timestamp, ack_timestamp)
+				//fmt.Println(lanrtt)
+				mux.Lock()
+				*flows = append(*flows, Flows{FlowID: flow_id, DeviceIP: origSrc, SynTimestamp: syn_timestamp, AckTimestamp: ack_timestamp, LanRTT: lanrtt})
+				mux.Unlock()
+				for _, flow := range *flows {
+					if flow.DeviceIP == origSrc {
+						mux.Lock()
+						DeviceFlows[origSrc] = append(DeviceFlows[origSrc], flow.LanRTT)
+						mux.Unlock()
+					}
+				}
+
+				// throw away matched event to avoid NewEventMap constantly growing with every new event
+				delete(EventMap, flow_id)
+
+			}
+		}
+	}
 }
 
 func CalculateFlowRtt(syn_timestamp float64, ack_timestamp float64) float64 {
@@ -304,27 +332,63 @@ func CalculateFlowRtt(syn_timestamp float64, ack_timestamp float64) float64 {
 	return delayTime
 }
 
-func CalculateAverages(flows **[]Flows, promMean prometheus.Gauge, promHisto prometheus.Histogram, arguments *Args) {
+func CalculateAverages(flows **[]Flows, promMean prometheus.Gauge, promHisto prometheus.Histogram, arguments *Args, mux *sync.Mutex) {
 
 	var delayTotal float64
 	var mean float64
 	var flowCount int
 
+	mux.Lock()
 	for _, flow := range **flows {
 		delayTotal += flow.LanRTT
 		promHisto.Observe(flow.LanRTT)
 	}
-
 	flowCount = len(**flows)
+	mux.Unlock()
 
 	mean = delayTotal / float64(flowCount)
 	promMean.Set(mean)
-	promHisto.Observe(mean)
+	//promHisto.Observe(mean)
 
-	//if arguments.StdOut {
+	if arguments.StatsStdOut {
 
-	fmt.Printf("\ndelayTotal: %f", delayTotal)
-	fmt.Printf("\nflowcount: %d", flowCount)
-	fmt.Printf("\nlan-rtt: %f\n", mean)
-	//}
+		fmt.Printf("\ndelayTotal: %f", delayTotal)
+		fmt.Printf("\nflowcount: %d", flowCount)
+		fmt.Printf("\nlan-rtt: %f\n", mean)
+	}
+}
+
+func CalculateAggregateAverages(DeviceFlows map[string][]float64, promAgMean prometheus.Gauge, promAgHisto prometheus.Histogram, promDeviceCount prometheus.Gauge, mux *sync.Mutex) {
+	var devicesCount int
+	var devicesMean float64
+	//var mean float64
+	mux.Lock()
+	for _, v := range DeviceFlows {
+		devicesMean += CalculateMean(v)
+		promAgHisto.Observe(CalculateMean(v))
+		//fmt.Printf("IP: %v Flows: %v LanRtt: %v\n", k, len(v), CalculateMean(v))
+	}
+
+	devicesCount = len(DeviceFlows)
+	promDeviceCount.Set(float64(devicesCount))
+
+	AggregatedMean := devicesMean / float64(devicesCount)
+	fmt.Printf("Total Device Count: %v Aggregated Mean: %v\n", devicesCount, AggregatedMean)
+
+	promAgMean.Set(AggregatedMean)
+	mux.Unlock()
+
+}
+
+func CalculateMean(array []float64) float64 {
+	var sum float64
+	sum = 0
+
+	for _, value := range array {
+		sum += value
+	}
+	mean := sum / float64(len(array))
+
+	return mean
+
 }
