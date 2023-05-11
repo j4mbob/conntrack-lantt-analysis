@@ -62,7 +62,7 @@ func ArgParse(arguments *Args) {
 	networkPtr := flag.String("network", "127.0.0.1", "network address to filter for")
 	subnetPtr := flag.String("mask", "255.255.240.0", "subnet mask to use")
 	continuousPtr := flag.Bool("continuous", false, "run continuously")
-	buffersizePtr := flag.Int("buffersize", 1000, "number of events to buffer for calculations")
+	buffersizePtr := flag.Int("buffersize", 2000, "number of events to buffer for calculations")
 	statsperiodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
 	polltimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	promportPtr := flag.String("promport", "1986", "port for prom exporter to listen on")

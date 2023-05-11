@@ -8,7 +8,7 @@ Samples conntrack data to produce lan-rtt stats for site traffic
 ./lanrtt -h
 Usage of ./lanrtt:
   -buffersize int
-    	number of events to buffer for calculations (default 1000)
+    	number of events to buffer for calculations (default 2000)
   -conntrackoutput
     	output conntrack updates to stdout
   -continuous
@@ -37,5 +37,9 @@ Usage of ./lanrtt:
 
 
 Arguments can also be read from a JSON file loaded via -loadconfig <path> .  this defaults to lanrtt.json in the same directory as the binary
+
+network and mask should be set to the vlan 4 network and subnet address on the gateway
+
+to run continously ensure continuous is set. pollingtime is ignored if continuous is enabled. Statsperiod and buffersize can be left on the defaults
 
 example file is in the repo
