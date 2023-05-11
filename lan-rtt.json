@@ -1,0 +1,14 @@
+{
+        "network": "10.152.0.2",
+        "subnetmask": "255.255.240.0",
+        "runcontinuous": true,
+        "statsperiod": 5,
+        "buffersize": 2000,
+        "pollingtime": 300,
+        "promport": "1986",
+        "conntrackstdout": false,
+        "statsstdout": true,
+        "sslcert": "/etc/letsencrypt/live/gw.nurturhouse.nurtur.ask4.co.uk/fullchain.pem",
+        "sslkey": "/etc/letsencrypt/live/gw.nurturhouse.nurtur.ask4.co.uk/privkey.pem",
+        "nossl": true
+}
