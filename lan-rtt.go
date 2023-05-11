@@ -71,7 +71,7 @@ func ArgParse(arguments *Args) {
 	sslcertPtr := flag.String("sslcert", "", "path to SSL cert to use for prom exporter")
 	sslkeyPtr := flag.String("sslkey", "", "path to SSL priv key to use for prom exporter")
 	nosslPtr := flag.Bool("nossl", false, "set to use HTTP and not HTTPS for Prom exporter")
-	configPtr := flag.String("loadconfig", "none", "load json config file. defaults to lanrtt.json")
+	configPtr := flag.String("loadconfig", "none", "load json config file at <path>. defaults to lanrtt.json")
 
 	flag.Parse()
 

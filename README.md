@@ -14,7 +14,7 @@ Usage of ./lanrtt:
   -continuous
     	run continuously
   -loadconfig string
-    	load json config file. defaults to lanrtt.json (default "none")
+    	load json config file at <path>. defaults to lanrtt.json (default "none")
   -mask string
     	subnet mask to use (default "255.255.240.0")
   -network string
@@ -36,7 +36,7 @@ Usage of ./lanrtt:
 ```
 
 
-Arguments can also be read from a JSON file loaded via -loadconfig <path> .  this defaults to lanrtt.json in the same directory as the binary
+Arguments can also be read from a JSON file loaded via -loadconfig    this defaults to lanrtt.json in the same directory as the binary
 
 network and mask should be set to the vlan 4 network and subnet address on the gateway
 
