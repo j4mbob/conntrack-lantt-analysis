@@ -8,13 +8,13 @@ Samples conntrack data to produce lan-rtt stats for site traffic
 ./lanrtt -h
 Usage of ./lanrtt:
   -buffersize int
-    	number of events to buffer for calculations (default 2000)
+    	number of events to buffer for calculations (default 1000)
   -conntrackoutput
     	output conntrack updates to stdout
   -continuous
     	run continuously
   -loadconfig string
-    	load json config file at <path>. defaults to lanrtt.json (default "none")
+    	load json config file. defaults to lanrtt.json (default "none")
   -mask string
     	subnet mask to use (default "255.255.240.0")
   -network string
@@ -25,6 +25,10 @@ Usage of ./lanrtt:
     	duration in seconds to poll for (default 300)
   -promport string
     	port for prom exporter to listen on (default "1986")
+  -pyroscope
+    	sent application metrics to remote pyroschope host
+  -pyroscopehost string
+    	remote pyroscope host to uset (default "http://grafana.networks-util.ask4.net")
   -sslcert string
     	path to SSL cert to use for prom exporter
   -sslkey string
@@ -42,4 +46,7 @@ network and mask should be set to the vlan 4 network and subnet address on the g
 
 to run continously ensure continuous is set. pollingtime is ignored if continuous is enabled. Statsperiod and buffersize can be left on the defaults
 
-example file is in the repo
+example config file is in the repo
+
+
+There is also an example grafana dashboard in the repo 
