@@ -1,9 +1,11 @@
 package metrics
 
 import (
+	"conntrack-lanrtt-analysis/lanrtt/exporter"
 	"conntrack-lanrtt-analysis/lanrtt/loader"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -14,6 +16,29 @@ type Flow struct {
 	SynTimestamp float64
 	AckTimestamp float64
 	LanRTT       float64
+}
+
+func ParseFlows(flows *[]Flow, DeviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
+	promMean, promHisto, promAgMean, promAgHisto, promDeviceCount := exporter.PromExporter(arguments.PromPort, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
+
+	for {
+
+		mux.Lock()
+
+		CalculateAverages(flows, promMean, promHisto, arguments, mux)
+		CalculateAggregateAverages(DeviceFlows, promAgMean, promAgHisto, promDeviceCount, arguments, mux)
+		clearDeviceFlows(DeviceFlows)
+
+		mux.Unlock()
+
+		time.Sleep(time.Duration(arguments.StatsPeriod) * time.Second)
+	}
+}
+
+func clearDeviceFlows(deviceFlows map[string][]float64) {
+	for k := range deviceFlows {
+		delete(deviceFlows, k)
+	}
 }
 
 func CalculateFlowRtt(synTimestamp, ackTimestamp float64) float64 {
