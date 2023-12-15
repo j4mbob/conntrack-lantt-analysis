@@ -1,8 +1,9 @@
 package main
 
 import (
-	"conntrack-lanrtt-analysis/lanrtt/conntrack"
-	"conntrack-lanrtt-analysis/lanrtt/loader"
+	"conntrack-lanrtt-analysis/conntrack"
+
+	"conntrack-lanrtt-analysis/loader"
 )
 
 func main() {

@@ -2,8 +2,8 @@ package conntrack
 
 import (
 	"bufio"
-	"conntrack-lanrtt-analysis/lanrtt/loader"
-	"conntrack-lanrtt-analysis/lanrtt/metrics"
+	"conntrack-lanrtt-analysis/loader"
+	"conntrack-lanrtt-analysis/metrics"
 	"io"
 	"log"
 	"regexp"

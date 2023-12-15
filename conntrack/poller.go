@@ -1,7 +1,7 @@
 package conntrack
 
 import (
-	"conntrack-lanrtt-analysis/lanrtt/loader"
+	"conntrack-lanrtt-analysis/loader"
 	"context"
 	"fmt"
 	"log"

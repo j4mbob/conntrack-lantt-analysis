@@ -1,8 +1,8 @@
 package metrics
 
 import (
-	"conntrack-lanrtt-analysis/lanrtt/exporter"
-	"conntrack-lanrtt-analysis/lanrtt/loader"
+	"conntrack-lanrtt-analysis/exporter"
+	"conntrack-lanrtt-analysis/loader"
 	"log"
 	"sync"
 	"time"
