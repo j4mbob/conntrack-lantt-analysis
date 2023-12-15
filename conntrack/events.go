@@ -49,7 +49,7 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 		newEvent.ReplyDstPort = match[11]
 		newEvent.FlowID = match[12]
 
-		NewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+		processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
 	}
 }
 
@@ -58,7 +58,7 @@ func parseTimestamp(part1, part2 string) (float64, error) {
 	return strconv.ParseFloat(combined, 64)
 }
 
-func NewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
+func processNewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
 	if arguments.ConntrackStdOut {
 		logEvent(newEvent)
 	}
