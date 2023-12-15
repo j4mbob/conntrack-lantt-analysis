@@ -10,6 +10,20 @@ import (
 	"sync"
 )
 
+type event struct {
+	TimeStamp       float64
+	PacketType      string
+	OriginalSrc     string
+	OriginalDst     string
+	OriginalSrcPort string
+	OriginalDstPort string
+	ReplySrc        string
+	ReplyDst        string
+	ReplySrcPort    string
+	ReplyDstPort    string
+	FlowID          string
+}
+
 func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
 	matches := regex.FindAllStringSubmatch(output, -1)
 	for _, match := range matches {
@@ -22,19 +36,20 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 			fmt.Println("Error parsing timestamp:", err)
 			continue
 		}
+		newEvent := event{}
+		newEvent.TimeStamp = timestamp
+		newEvent.PacketType = match[3]
+		newEvent.OriginalSrc = match[4]
+		newEvent.OriginalDst = match[5]
+		newEvent.OriginalSrcPort = match[6]
+		newEvent.OriginalDstPort = match[7]
+		newEvent.ReplySrc = match[8]
+		newEvent.ReplyDst = match[9]
+		newEvent.ReplySrcPort = match[10]
+		newEvent.ReplyDstPort = match[11]
+		newEvent.FlowID = match[12]
 
-		pkttype := match[3]
-		origSrc := match[4]
-		origDst := match[5]
-		origSport := match[6]
-		origDport := match[7]
-		replySrc := match[8]
-		replyDst := match[9]
-		replySport := match[10]
-		replyDsport := match[11]
-		flowID := match[12]
-
-		NewEvent(timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flowID, eventMap, flows, deviceFlows, arguments, mux)
+		NewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
 	}
 }
 
@@ -43,43 +58,44 @@ func parseTimestamp(part1, part2 string) (float64, error) {
 	return strconv.ParseFloat(combined, 64)
 }
 
-func NewEvent(timestamp float64, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flowID string, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
+func NewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
 	if arguments.ConntrackStdOut {
-		logEvent(timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flowID)
+		logEvent(newEvent)
 	}
 
-	switch pkttype {
+	switch newEvent.PacketType {
 	case "SYN_RECV":
-		handleSynRecvEvent(timestamp, flowID, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, eventMap)
+		handleSynRecvEvent(newEvent, eventMap)
 	default:
-		handleAckEvent(timestamp, flowID, pkttype, origSrc, eventMap, flows, deviceFlows, arguments.BufferSize, mux)
+		handleAckEvent(newEvent, eventMap, flows, deviceFlows, arguments.BufferSize, mux)
 	}
 }
 
-func logEvent(timestamp float64, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flowID string) {
-	log.Printf("[%f] %v %v %v %v %v %v %v %v %v %v\n", timestamp, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport, flowID)
+func logEvent(newEvent event) {
+	log.Printf("[%f] %v %v %v %v %v %v %v %v %v %v\n", newEvent.TimeStamp, newEvent.PacketType, newEvent.OriginalSrc, newEvent.OriginalDst, newEvent.OriginalSrcPort, newEvent.OriginalDstPort, newEvent.ReplySrc,
+		newEvent.ReplyDst, newEvent.ReplySrcPort, newEvent.ReplyDstPort, newEvent.FlowID)
 }
 
-func handleSynRecvEvent(timestamp float64, flowID, pkttype, origSrc, origDst, origSport, origDport, replySrc, replyDst, replySport, replyDsport string, eventMap map[string]map[string]interface{}) {
-	eventMap[flowID] = map[string]interface{}{
-		"timestamp":   timestamp,
-		"type":        pkttype,
-		"origSrc":     origSrc,
-		"origDst":     origDst,
-		"origSport":   origSport,
-		"origDport":   origDport,
-		"replySrc":    replySrc,
-		"replyDst":    replyDst,
-		"replySport":  replySport,
-		"replyDsport": replyDsport,
+func handleSynRecvEvent(newEvent event, eventMap map[string]map[string]interface{}) {
+	eventMap[newEvent.FlowID] = map[string]interface{}{
+		"timestamp":   newEvent.TimeStamp,
+		"type":        newEvent.PacketType,
+		"origSrc":     newEvent.OriginalSrc,
+		"origDst":     newEvent.OriginalDst,
+		"origSport":   newEvent.OriginalSrcPort,
+		"origDport":   newEvent.OriginalDstPort,
+		"replySrc":    newEvent.ReplySrc,
+		"replyDst":    newEvent.ReplyDst,
+		"replySport":  newEvent.ReplySrcPort,
+		"replyDsport": newEvent.ReplyDstPort,
 	}
 }
 
-func handleAckEvent(timestamp float64, flowID string, pkkytype string, origSrc string, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
-	event, present := eventMap[flowID]
+func handleAckEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
+	synRecvEvent, present := eventMap[newEvent.FlowID]
 	if present {
-		processMatchedEvent(timestamp, flowID, origSrc, event, flows, deviceFlows, bufferSize, mux)
-		delete(eventMap, flowID)
+		processMatchedEvent(newEvent.TimeStamp, newEvent.FlowID, newEvent.OriginalSrc, synRecvEvent, flows, deviceFlows, bufferSize, mux)
+		delete(eventMap, newEvent.FlowID)
 	}
 }
 
