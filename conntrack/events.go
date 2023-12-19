@@ -3,6 +3,7 @@ package conntrack
 import (
 	"conntrack-lanrtt-analysis/loader"
 	"conntrack-lanrtt-analysis/metrics"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -24,33 +25,40 @@ type event struct {
 	FlowID          string
 }
 
-func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
+func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
 	matches := regex.FindAllStringSubmatch(output, -1)
-	for _, match := range matches {
-		if len(match) < 13 {
-			continue
-		}
-
-		timestamp, err := parseTimestamp(match[1], match[2])
-		if err != nil {
-			fmt.Println("Error parsing timestamp:", err)
-			continue
-		}
-		newEvent := event{}
-		newEvent.TimeStamp = timestamp
-		newEvent.PacketType = match[3]
-		newEvent.OriginalSrc = match[4]
-		newEvent.OriginalDst = match[5]
-		newEvent.OriginalSrcPort = match[6]
-		newEvent.OriginalDstPort = match[7]
-		newEvent.ReplySrc = match[8]
-		newEvent.ReplyDst = match[9]
-		newEvent.ReplySrcPort = match[10]
-		newEvent.ReplyDstPort = match[11]
-		newEvent.FlowID = match[12]
-
-		processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+	if matches == nil {
+		return errors.New("no regex match for conntrack output")
 	}
+	for _, match := range matches {
+		fmt.Println(match)
+		fmt.Println(len(match))
+		if len(match) != 13 {
+			return errors.New("conntrack string too short")
+		} else {
+
+			timestamp, err := parseTimestamp(match[1], match[2])
+			if err != nil {
+				fmt.Println("Error parsing timestamp:", err)
+				continue
+			}
+			newEvent := event{}
+			newEvent.TimeStamp = timestamp
+			newEvent.PacketType = match[3]
+			newEvent.OriginalSrc = match[4]
+			newEvent.OriginalDst = match[5]
+			newEvent.OriginalSrcPort = match[6]
+			newEvent.OriginalDstPort = match[7]
+			newEvent.ReplySrc = match[8]
+			newEvent.ReplyDst = match[9]
+			newEvent.ReplySrcPort = match[10]
+			newEvent.ReplyDstPort = match[11]
+			newEvent.FlowID = match[12]
+
+			processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+		}
+	}
+	return nil
 }
 
 func parseTimestamp(part1, part2 string) (float64, error) {

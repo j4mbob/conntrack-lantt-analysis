@@ -36,7 +36,10 @@ func processStdout(stdout io.ReadCloser, regex *regexp.Regexp, eventMap map[stri
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		output := scanner.Text()
-		handleOutput(output, regex, eventMap, flows, deviceFlows, arguments, mux)
+		err := handleOutput(output, regex, eventMap, flows, deviceFlows, arguments, mux)
+		if err != nil {
+			log.Printf("error parsing conntrack string: %s", err)
+		}
 	}
 
 }
