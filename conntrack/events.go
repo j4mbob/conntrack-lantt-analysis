@@ -4,7 +4,6 @@ import (
 	"conntrack-lanrtt-analysis/loader"
 	"conntrack-lanrtt-analysis/metrics"
 	"errors"
-	"fmt"
 	"log"
 	"regexp"
 	"strconv"
@@ -28,7 +27,8 @@ type event struct {
 func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
 	matches := regex.FindAllStringSubmatch(output, -1)
 	if matches == nil {
-		return errors.New("no regex match for conntrack output")
+		errorMsg := "no regex match for conntrack output: " + output + "/n"
+		return errors.New(errorMsg)
 	}
 	for _, match := range matches {
 		if len(match) != 13 {
@@ -37,8 +37,8 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 
 			timestamp, err := parseTimestamp(match[1], match[2])
 			if err != nil {
-				fmt.Println("Error parsing timestamp:", err)
-				continue
+				errorMsg := "error parsing timestamp: " + err.Error()
+				return errors.New(errorMsg)
 			}
 			newEvent := event{}
 			newEvent.TimeStamp = timestamp
@@ -80,7 +80,7 @@ func processNewEvent(newEvent event, eventMap map[string]map[string]interface{},
 		return errors.New("no valid event type")
 	}
 
-	if arguments.ConntrackStdOut {
+	if arguments.Debug {
 		logEvent(newEvent)
 	}
 

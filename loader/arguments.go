@@ -10,20 +10,21 @@ import (
 )
 
 type Args struct {
-	Network         string `json:"network"`
-	Subnet          string `json:"subnetmask"`
-	RunContinuous   bool   `json:"runcontinuous"`
-	BufferSize      int    `json:"buffersize"`
-	StatsPeriod     int    `json:"statsperiod"`
-	PollTime        int64  `json:"pollingtime"`
-	PromPort        string `json:"promport"`
-	ConntrackStdOut bool   `json:"conntrackstdout"`
-	StatsStdOut     bool   `json:"statsstdout"`
-	SSLCert         string `json:"sslcert"`
-	SSLKey          string `json:"sslkey"`
-	NoSSL           bool   `json:"nossl"`
-	PyroScope       bool   `json:"pyroscope"`
-	PyroScopeHost   string `json:"pyroscopehost"`
+	Network       string `json:"network"`
+	Subnet        string `json:"subnetmask"`
+	RunContinuous bool   `json:"runcontinuous"`
+	BufferSize    int    `json:"buffersize"`
+	StatsPeriod   int    `json:"statsperiod"`
+	PollTime      int64  `json:"pollingtime"`
+	PromPort      string `json:"promport"`
+	Debug         bool   `json:"debug"`
+	StatsStdOut   bool   `json:"statsstdout"`
+	SSLCert       string `json:"sslcert"`
+	SSLKey        string `json:"sslkey"`
+	UseSSL        bool   `json:"usessl"`
+	PyroScope     bool   `json:"pyroscope"`
+	PyroScopeHost string `json:"pyroscopehost"`
+	LogFile       string `json:"logfile"`
 }
 
 func ArgParse(arguments *Args) {
@@ -37,11 +38,11 @@ func ArgParse(arguments *Args) {
 	statsperiodPtr := flag.Int("statsperiod", 5, "output stats every x seconds")
 	polltimePtr := flag.Int64("pollingtime", 300, "duration in seconds to poll for")
 	promportPtr := flag.String("promport", "1986", "port for prom exporter to listen on")
-	conntrackoutputPtr := flag.Bool("conntrackoutput", false, "output conntrack updates to stdout")
+	debugPtr := flag.Bool("debug", false, "enabling debugging")
 	statsoutputPtr := flag.Bool("statsoutput", false, "output stats updates to stdout")
 	sslcertPtr := flag.String("sslcert", "", "path to SSL cert to use for prom exporter")
 	sslkeyPtr := flag.String("sslkey", "", "path to SSL priv key to use for prom exporter")
-	nosslPtr := flag.Bool("nossl", false, "set to use HTTP and not HTTPS for Prom exporter")
+	usesslPtr := flag.Bool("usessl", false, "set to use HTTP and not HTTPS for Prom exporter")
 	pyroscopePtr := flag.Bool("pyroscope", false, "sent application metrics to remote pyroschope host")
 	pyroscopeHostPtr := flag.String("pyroscopehost", "http://grafana.networks-util.ask4.net", "remote pyroscope host to uset")
 
@@ -55,7 +56,7 @@ func ArgParse(arguments *Args) {
 		log.Printf("loading JSON config: %s\n", *configPtr)
 		LoadConfig(*configPtr, arguments)
 	} else {
-		if (*sslcertPtr == "" || *sslkeyPtr == "") && !*nosslPtr {
+		if (*sslcertPtr == "" || *sslkeyPtr == "") && *usesslPtr {
 			log.Printf("SSL options missing. cant start\n")
 			os.Exit(1)
 		}
@@ -66,16 +67,17 @@ func ArgParse(arguments *Args) {
 		arguments.StatsPeriod = *statsperiodPtr
 		arguments.PollTime = *polltimePtr
 		arguments.PromPort = *promportPtr
-		arguments.ConntrackStdOut = *conntrackoutputPtr
+		arguments.Debug = *debugPtr
 		arguments.StatsStdOut = *statsoutputPtr
 		arguments.SSLCert = *sslcertPtr
 		arguments.SSLKey = *sslkeyPtr
-		arguments.NoSSL = *nosslPtr
+		arguments.UseSSL = *usesslPtr
 		arguments.PyroScope = *pyroscopePtr
 		arguments.PyroScopeHost = *pyroscopeHostPtr
 
 		log.Printf("loading cli arguments:\n")
-		log.Printf(" Network: %s\n Subnet Mask: %s\n Run Continuously: %v\n Buffer size: %v\n Stats Period: %v\n Polling Time: %v\n Prom Exporter Port: %v\n Display Conntrack Output: %v\n Display Stats Output: %v\n SSL Cert: %v\n SSL Key: %v\n Non SSL: %v\n", arguments.Network, arguments.Subnet, arguments.RunContinuous, arguments.BufferSize, arguments.StatsPeriod, arguments.PollTime, arguments.PromPort, arguments.ConntrackStdOut, arguments.StatsStdOut, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
+		log.Printf(" Network: %s\n Subnet Mask: %s\n Run Continuously: %v\n Buffer size: %v\n Stats Period: %v\n Polling Time: %v\n Prom Exporter Port: %v\n Display Debug Output: %v\n Display Stats Output: %v\n SSL Cert: %v\n SSL Key: %v\n Non SSL: %v\n",
+			arguments.Network, arguments.Subnet, arguments.RunContinuous, arguments.BufferSize, arguments.StatsPeriod, arguments.PollTime, arguments.PromPort, arguments.Debug, arguments.StatsStdOut, arguments.SSLCert, arguments.SSLKey, arguments.UseSSL)
 
 	}
 

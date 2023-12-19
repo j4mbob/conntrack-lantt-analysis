@@ -1,0 +1,19 @@
+[Unit]
+Description=LAN-RTT Polling
+
+[Service]
+Type=simple
+PIDFile=/run/lanrtt.pid
+ExecStart=/usr/local/sbin/lanrtt -loadconfig /etc/lanrtt/config.json
+KillMode=control-group
+TimeoutStopSec=5
+# wait five seconds before restarting, but just keep restarting forever on failure (the burst of 1000 will never be hit within 10 seconds)
+RestartSec=10
+StartLimitInterval=10
+StartLimitBurst=1000
+
+PrivateTmp=true
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,7 @@ package conntrack
 
 import (
 	"bufio"
+	"conntrack-lanrtt-analysis/exporter"
 	"conntrack-lanrtt-analysis/loader"
 	"conntrack-lanrtt-analysis/metrics"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"sync"
 )
 
-func EventParser(stdout io.ReadCloser, stderr io.ReadCloser, arguments *loader.Args) {
+func EventParser(stdout io.ReadCloser, stderr io.ReadCloser, arguments *loader.Args, promMetrics *exporter.PromMetrics) {
 	regex := compileEventRegex()
 
 	eventMap := make(map[string]map[string]interface{})
@@ -18,7 +19,7 @@ func EventParser(stdout io.ReadCloser, stderr io.ReadCloser, arguments *loader.A
 	flows := make([]metrics.Flow, 0, 10)
 	mux := &sync.Mutex{}
 
-	go metrics.ParseFlows(&flows, deviceFlows, arguments, mux)
+	go metrics.ParseFlows(&flows, deviceFlows, arguments, promMetrics, mux)
 	processStreams(stdout, stderr, regex, eventMap, &flows, deviceFlows, arguments, mux)
 }
 
@@ -38,7 +39,9 @@ func processStdout(stdout io.ReadCloser, regex *regexp.Regexp, eventMap map[stri
 		output := scanner.Text()
 		err := handleOutput(output, regex, eventMap, flows, deviceFlows, arguments, mux)
 		if err != nil {
-			log.Printf("error parsing conntrack string: %s", err)
+			if arguments.Debug {
+				log.Printf("error parsing conntrack string: %s", err)
+			}
 		}
 	}
 

@@ -73,7 +73,7 @@ func TestProcessNewEvent(t *testing.T) {
 				PacketType: "SYN_RECV",
 			},
 			arguments: &loader.Args{
-				ConntrackStdOut: true,
+				Debug: true,
 			},
 			expectedError: nil,
 		},
@@ -83,7 +83,7 @@ func TestProcessNewEvent(t *testing.T) {
 				PacketType: "ESTABLISHED",
 			},
 			arguments: &loader.Args{
-				ConntrackStdOut: true,
+				Debug: true,
 			},
 			expectedError: nil,
 		},
@@ -93,7 +93,7 @@ func TestProcessNewEvent(t *testing.T) {
 				PacketType: "SYN_RECV",
 			},
 			arguments: &loader.Args{
-				ConntrackStdOut: false,
+				Debug: false,
 			},
 			expectedError: nil,
 		},
@@ -103,7 +103,7 @@ func TestProcessNewEvent(t *testing.T) {
 				PacketType: "ESTABLISHED",
 			},
 			arguments: &loader.Args{
-				ConntrackStdOut: false,
+				Debug: false,
 			},
 			expectedError: nil,
 		},
@@ -120,7 +120,9 @@ func TestProcessNewEvent(t *testing.T) {
 			newEvent: event{
 				PacketType: "INVALID_TYPE",
 			},
-			arguments:     &loader.Args{},
+			arguments: &loader.Args{
+				Debug: false,
+			},
 			expectedError: errors.New("no valid event type"),
 		},
 	}

@@ -6,8 +6,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Flow struct {
@@ -18,15 +16,14 @@ type Flow struct {
 	LanRTT       float64
 }
 
-func ParseFlows(flows *[]Flow, DeviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
-	promMean, promHisto, promAgMean, promAgHisto, promDeviceCount := exporter.PromExporter(arguments.PromPort, arguments.SSLCert, arguments.SSLKey, arguments.NoSSL)
+func ParseFlows(flows *[]Flow, DeviceFlows map[string][]float64, arguments *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
 
 	for {
 
 		mux.Lock()
 
-		CalculateAverages(flows, promMean, promHisto, arguments, mux)
-		CalculateAggregateAverages(DeviceFlows, promAgMean, promAgHisto, promDeviceCount, arguments, mux)
+		CalculateAverages(flows, arguments, promMetrics, mux)
+		CalculateAggregateAverages(DeviceFlows, arguments, promMetrics, mux)
 		clearDeviceFlows(DeviceFlows)
 
 		mux.Unlock()
@@ -45,12 +42,13 @@ func CalculateFlowRtt(synTimestamp, ackTimestamp float64) float64 {
 	return (ackTimestamp - synTimestamp) * 1000
 }
 
-func CalculateAverages(flows *[]Flow, promMean prometheus.Gauge, promHisto prometheus.Histogram, args *loader.Args, mux *sync.Mutex) {
+func CalculateAverages(flows *[]Flow, args *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
 	var delayTotal, mean float64
 
 	for _, flow := range *flows {
 		delayTotal += flow.LanRTT
-		promHisto.Observe(flow.LanRTT)
+		promMetrics.MeanHisto.Observe(flow.LanRTT)
+
 	}
 	flowCount := len(*flows)
 
@@ -58,7 +56,8 @@ func CalculateAverages(flows *[]Flow, promMean prometheus.Gauge, promHisto prome
 		mean = delayTotal / float64(flowCount)
 	}
 
-	promMean.Set(mean)
+	promMetrics.MeanAll.Set(mean)
+
 	logFlowStats(args, delayTotal, flowCount, mean)
 }
 
@@ -68,14 +67,15 @@ func logFlowStats(args *loader.Args, delayTotal float64, flowCount int, mean flo
 	}
 }
 
-func CalculateAggregateAverages(deviceFlows map[string][]float64, promAgMean prometheus.Gauge, promAgHisto prometheus.Histogram, promDeviceCount prometheus.Gauge, args *loader.Args, mux *sync.Mutex) {
+func CalculateAggregateAverages(deviceFlows map[string][]float64, args *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
 	var devicesCount int
 	var devicesMean float64
 
 	for _, v := range deviceFlows {
 		mean := CalculateMean(v)
 		devicesMean += mean
-		promAgHisto.Observe(mean)
+		promMetrics.MeanAggregatedHisto.Observe(mean)
+
 	}
 	devicesCount = len(deviceFlows)
 
@@ -83,8 +83,10 @@ func CalculateAggregateAverages(deviceFlows map[string][]float64, promAgMean pro
 		devicesMean /= float64(devicesCount)
 	}
 
-	promDeviceCount.Set(float64(devicesCount))
-	promAgMean.Set(devicesMean)
+	promMetrics.DeviceCount.Set(float64(devicesCount))
+
+	promMetrics.MeanAggregated.Set(devicesMean)
+
 	logAggregateStats(args, devicesCount, devicesMean)
 }
 

@@ -1,16 +1,16 @@
 package conntrack
 
 import (
+	"conntrack-lanrtt-analysis/exporter"
 	"conntrack-lanrtt-analysis/loader"
 	"context"
-	"fmt"
 	"log"
 	"os/exec"
 	"strings"
 	"time"
 )
 
-func Poller(arguments *loader.Args) {
+func Poller(arguments *loader.Args, promMetrics *exporter.PromMetrics) {
 
 	args := "-E -e UPDATES -o timestamp,id --buffer-size 1064960 -p tcp --orig-src " + arguments.Network + " --mask-src " + arguments.Subnet
 
@@ -31,28 +31,28 @@ func Poller(arguments *loader.Args) {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Printf("std out error")
+		log.Printf("std out error")
 		log.Fatal(err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		fmt.Printf("stderr error")
+		log.Printf("stderr error")
 		log.Fatal(err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("start error")
+		log.Printf("start error")
 		log.Fatal(err)
 
 	}
 
-	EventParser(stdout, stderr, arguments)
+	EventParser(stdout, stderr, arguments, promMetrics)
 
 	if err := cmd.Wait(); err != nil {
-		fmt.Printf("wait error")
+		log.Printf("wait error")
 		log.Fatal(err)
 	}
-	fmt.Println("Polling finished")
+	log.Println("Polling finished")
 
 }
