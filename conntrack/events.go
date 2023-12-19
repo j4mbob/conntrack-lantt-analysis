@@ -24,7 +24,7 @@ type event struct {
 	FlowID          string
 }
 
-func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
+func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[string]interface{}, allFlows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
 	matches := regex.FindAllStringSubmatch(output, -1)
 	if matches == nil {
 		errorMsg := "no regex match for conntrack output: " + output + "/n"
@@ -53,7 +53,7 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 			newEvent.ReplyDstPort = match[11]
 			newEvent.FlowID = match[12]
 
-			err = processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+			err = processNewEvent(newEvent, eventMap, allFlows, deviceFlows, arguments, mux)
 			if err != nil {
 				return err
 			}
@@ -68,14 +68,14 @@ func parseTimestamp(part1, part2 string) (float64, error) {
 	return strconv.ParseFloat(combined, 64)
 }
 
-func processNewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
+func processNewEvent(newEvent event, eventMap map[string]map[string]interface{}, allFlows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
 
 	switch newEvent.PacketType {
 	case "SYN_RECV":
 		handleSynRecvEvent(newEvent, eventMap)
 
 	case "ESTABLISHED":
-		handleAckEvent(newEvent, eventMap, flows, deviceFlows, arguments.BufferSize, mux)
+		handleAckEvent(newEvent, eventMap, allFlows, deviceFlows, arguments.BufferSize, mux)
 	default:
 		return errors.New("no valid event type")
 	}
@@ -108,15 +108,15 @@ func handleSynRecvEvent(newEvent event, eventMap map[string]map[string]interface
 	}
 }
 
-func handleAckEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
+func handleAckEvent(newEvent event, eventMap map[string]map[string]interface{}, allFlows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
 	synRecvEvent, present := eventMap[newEvent.FlowID]
 	if present {
-		processMatchedEvent(newEvent.TimeStamp, newEvent.FlowID, newEvent.OriginalSrc, synRecvEvent, flows, deviceFlows, bufferSize, mux)
+		processMatchedEvent(newEvent.TimeStamp, newEvent.FlowID, newEvent.OriginalSrc, synRecvEvent, allFlows, deviceFlows, bufferSize, mux)
 		delete(eventMap, newEvent.FlowID)
 	}
 }
 
-func processMatchedEvent(timestamp float64, flowID, origSrc string, event map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
+func processMatchedEvent(timestamp float64, flowID, origSrc string, event map[string]interface{}, allFlows *[]metrics.Flow, deviceFlows map[string][]float64, bufferSize int, mux *sync.Mutex) {
 	synTimestamp := event["timestamp"].(float64)
 	lanRTT := metrics.CalculateFlowRtt(synTimestamp, timestamp)
 
@@ -130,10 +130,10 @@ func processMatchedEvent(timestamp float64, flowID, origSrc string, event map[st
 
 	mux.Lock()
 
-	if len(*flows) == bufferSize {
-		*flows = (*flows)[1:]
+	if len(*allFlows) == bufferSize {
+		*allFlows = (*allFlows)[1:]
 	}
-	*flows = append(*flows, newFlow)
+	*allFlows = append(*allFlows, newFlow)
 	updateDeviceFlows(origSrc, lanRTT, deviceFlows)
 	mux.Unlock()
 }

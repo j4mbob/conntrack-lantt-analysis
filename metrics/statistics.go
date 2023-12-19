@@ -16,13 +16,13 @@ type Flow struct {
 	LanRTT       float64
 }
 
-func ParseFlows(flows *[]Flow, DeviceFlows map[string][]float64, arguments *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
+func ParseFlows(allFlows *[]Flow, DeviceFlows map[string][]float64, arguments *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
 
 	for {
 
 		mux.Lock()
 
-		CalculateAverages(flows, arguments, promMetrics, mux)
+		CalculateAverages(allFlows, arguments, promMetrics, mux)
 		CalculateAggregateAverages(DeviceFlows, arguments, promMetrics, mux)
 		clearDeviceFlows(DeviceFlows)
 
@@ -42,15 +42,15 @@ func CalculateFlowRtt(synTimestamp, ackTimestamp float64) float64 {
 	return (ackTimestamp - synTimestamp) * 1000
 }
 
-func CalculateAverages(flows *[]Flow, args *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
+func CalculateAverages(allFlows *[]Flow, args *loader.Args, promMetrics *exporter.PromMetrics, mux *sync.Mutex) {
 	var delayTotal, mean float64
 
-	for _, flow := range *flows {
+	for _, flow := range *allFlows {
 		delayTotal += flow.LanRTT
 		promMetrics.MeanHisto.Observe(flow.LanRTT)
 
 	}
-	flowCount := len(*flows)
+	flowCount := len(*allFlows)
 
 	if flowCount > 0 {
 		mean = delayTotal / float64(flowCount)

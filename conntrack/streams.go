@@ -16,11 +16,11 @@ func EventParser(stdout io.ReadCloser, stderr io.ReadCloser, arguments *loader.A
 
 	eventMap := make(map[string]map[string]interface{})
 	deviceFlows := make(map[string][]float64)
-	flows := make([]metrics.Flow, 0, 10)
+	allFlows := make([]metrics.Flow, 0, 10)
 	mux := &sync.Mutex{}
 
-	go metrics.ParseFlows(&flows, deviceFlows, arguments, promMetrics, mux)
-	processStreams(stdout, stderr, regex, eventMap, &flows, deviceFlows, arguments, mux)
+	go metrics.ParseFlows(&allFlows, deviceFlows, arguments, promMetrics, mux)
+	processStreams(stdout, stderr, regex, eventMap, &allFlows, deviceFlows, arguments, mux)
 }
 
 func compileEventRegex() *regexp.Regexp {

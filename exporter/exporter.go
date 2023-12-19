@@ -23,33 +23,6 @@ type ExporterOpts struct {
 	UseSSL  bool
 }
 
-// func PromExporter(promPort, sslCert, sslKey string, noSSL bool) (prometheus.Gauge, prometheus.Histogram, prometheus.Gauge, prometheus.Histogram, prometheus.Gauge) {
-/*func PromExporter(promPort, sslCert, sslKey string, noSSL bool) PromMetrics {
-	reg := prometheus.NewRegistry()
-
-	promMetrics := PromMetrics{}
-	promMetrics.MeanAll = newGauge("lanRtt_mean_value", "lanRtt average value")
-	promMetrics.MeanAggregated = newGauge("lanRtt_aggregated_device_flows_mean_value", "lanRtt aggregated device flows average value")
-	promMetrics.MeanHisto = newHistogram("lanRtt_flows_histo_value", "lanRtt flows histo values")
-	promMetrics.MeanAggregatedHisto = newHistogram("lanRtt_aggregated_device_flows_histo_value", "lanRtt aggregated device flows histo values")
-
-	/*
-		promMeanEndpoint := newGauge("lanRtt_mean_value", "lanRtt average value")
-		promAgMeanEndpoint := newGauge("lanRtt_aggregated_device_flows_mean_value", "lanRtt aggregated device flows average value")
-		promDeviceCountEndpoint := newGauge("lanRtt_unique_device_flows_value", "lanRtt unique device flow count value")
-		promHistoEndpoint := newHistogram("lanRtt_flows_histo_value", "lanRtt flows histo values")
-		promAgHistoEndpoint := newHistogram("lanRtt_aggregated_device_flows_histo_value", "lanRtt aggregatred device flows histo values")
-
-	reg.MustRegister(promMetrics.MeanAll, promMetrics.MeanAggregated, promMetrics.MeanHisto, promMetrics.MeanAggregatedHisto)
-	//reg.MustRegister(promMeanEndpoint, promHistoEndpoint, promAgMeanEndpoint, promDeviceCountEndpoint, promAgHistoEndpoint)
-
-	//go startHTTPServer(reg, promPort, sslCert, sslKey, noSSL)
-
-	return promMetrics
-}
-*/
-//return promMeanEndpoint, promHistoEndpoint, promAgMeanEndpoint, promAgHistoEndpoint, promDeviceCountEndpoint
-
 func newGauge(reg *prometheus.Registry, name, help string) prometheus.Gauge {
 	gauge := prometheus.NewGauge(prometheus.GaugeOpts{Name: name, Help: help})
 	reg.MustRegister(gauge)
@@ -89,18 +62,7 @@ func StartPromEndPoint(options ExporterOpts) *prometheus.Registry {
 	}(reg)
 
 	return reg
-	/*
-		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-		var err error
-		if noSSL {
-			err = http.ListenAndServe(":"+promPort, nil)
-		} else {
-			err = http.ListenAndServeTLS(":"+promPort, sslCert, sslKey, nil)
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-	*/
+
 }
 
 func BuildPromMetrics(reg *prometheus.Registry) *PromMetrics {
