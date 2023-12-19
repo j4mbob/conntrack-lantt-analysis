@@ -31,8 +31,6 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 		return errors.New("no regex match for conntrack output")
 	}
 	for _, match := range matches {
-		fmt.Println(match)
-		fmt.Println(len(match))
 		if len(match) != 13 {
 			return errors.New("conntrack string too short")
 		} else {
@@ -55,7 +53,11 @@ func handleOutput(output string, regex *regexp.Regexp, eventMap map[string]map[s
 			newEvent.ReplyDstPort = match[11]
 			newEvent.FlowID = match[12]
 
-			processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+			err = processNewEvent(newEvent, eventMap, flows, deviceFlows, arguments, mux)
+			if err != nil {
+				return err
+			}
+
 		}
 	}
 	return nil
@@ -66,17 +68,24 @@ func parseTimestamp(part1, part2 string) (float64, error) {
 	return strconv.ParseFloat(combined, 64)
 }
 
-func processNewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) {
-	if arguments.ConntrackStdOut {
-		logEvent(newEvent)
-	}
+func processNewEvent(newEvent event, eventMap map[string]map[string]interface{}, flows *[]metrics.Flow, deviceFlows map[string][]float64, arguments *loader.Args, mux *sync.Mutex) error {
 
 	switch newEvent.PacketType {
 	case "SYN_RECV":
 		handleSynRecvEvent(newEvent, eventMap)
-	default:
+
+	case "ESTABLISHED":
 		handleAckEvent(newEvent, eventMap, flows, deviceFlows, arguments.BufferSize, mux)
+	default:
+		return errors.New("no valid event type")
 	}
+
+	if arguments.ConntrackStdOut {
+		logEvent(newEvent)
+	}
+
+	return nil
+
 }
 
 func logEvent(newEvent event) {

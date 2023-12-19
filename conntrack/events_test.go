@@ -59,3 +59,85 @@ func TestHandleOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessNewEvent(t *testing.T) {
+	testCases := []struct {
+		name          string
+		newEvent      event
+		arguments     *loader.Args
+		expectedError error
+	}{
+		{
+			name: "SYN_RECV_Event_StatsOut",
+			newEvent: event{
+				PacketType: "SYN_RECV",
+			},
+			arguments: &loader.Args{
+				ConntrackStdOut: true,
+			},
+			expectedError: nil,
+		},
+		{
+			name: "ESTABLISHED_Event_StatsOut",
+			newEvent: event{
+				PacketType: "ESTABLISHED",
+			},
+			arguments: &loader.Args{
+				ConntrackStdOut: true,
+			},
+			expectedError: nil,
+		},
+		{
+			name: "SYN_RECV_Event",
+			newEvent: event{
+				PacketType: "SYN_RECV",
+			},
+			arguments: &loader.Args{
+				ConntrackStdOut: false,
+			},
+			expectedError: nil,
+		},
+		{
+			name: "ESTABLISHED_Event",
+			newEvent: event{
+				PacketType: "ESTABLISHED",
+			},
+			arguments: &loader.Args{
+				ConntrackStdOut: false,
+			},
+			expectedError: nil,
+		},
+		{
+			name: "InvalidEvent",
+			newEvent: event{
+				PacketType: "INVALID_TYPE",
+			},
+			arguments:     &loader.Args{},
+			expectedError: errors.New("no valid event type"),
+		},
+		{
+			name: "InvalidEvent_StatsOut",
+			newEvent: event{
+				PacketType: "INVALID_TYPE",
+			},
+			arguments:     &loader.Args{},
+			expectedError: errors.New("no valid event type"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			eventMap := make(map[string]map[string]interface{})
+			var flows []metrics.Flow
+			deviceFlows := make(map[string][]float64)
+			mux := &sync.Mutex{}
+
+			err := processNewEvent(tc.newEvent, eventMap, &flows, deviceFlows, tc.arguments, mux)
+
+			if (err != nil && tc.expectedError == nil) || (err == nil && tc.expectedError != nil) || (err != nil && tc.expectedError != nil && err.Error() != tc.expectedError.Error()) {
+				t.Errorf("Test %s: expected error %v, got %v", tc.name, tc.expectedError, err)
+			}
+
+		})
+	}
+}
