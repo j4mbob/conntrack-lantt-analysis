@@ -19,7 +19,7 @@ Usage of ./lanrtt:
     	subnet mask to use (default "255.255.240.0")
   -network string
     	network address to filter for (default "127.0.0.1")
-  -pdfile string
+  -pidfile string
     	pid file to use (default "/run/lanrtt.pid")
   -pollingtime int
     	duration in seconds to poll for (default 300)
