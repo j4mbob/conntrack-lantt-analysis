@@ -44,7 +44,7 @@ func ArgParse(arguments *Args) {
 	useSsl := flag.Bool("usessl", false, "set to use HTTP and not HTTPS for Prom exporter")
 	pyroscope := flag.Bool("pyroscope", false, "sent application metrics to remote pyroschope host")
 	pyroscopeHost := flag.String("pyroscopehost", "http://pyroscope-host:4040", "remote pyroscope host to uset")
-	pidFile := flag.String("pdfile", "/run/lanrtt.pid", "pid file to use")
+	pidFile := flag.String("pidfile", "/run/lanrtt.pid", "pid file to use")
 
 	config := flag.String("loadconfig", "none", "load json config file")
 
