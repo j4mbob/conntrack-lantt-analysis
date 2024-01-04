@@ -3,7 +3,7 @@ package metrics
 import (
 	"conntrack-lanrtt-analysis/exporter"
 	"conntrack-lanrtt-analysis/loader"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -62,8 +62,8 @@ func CalculateAverages(allFlows *[]Flow, args *loader.Args, promMetrics *exporte
 }
 
 func logFlowStats(args *loader.Args, delayTotal float64, flowCount int, mean float64) {
-	if args.StatsStdOut {
-		log.Printf("All Flows: [delayTotal: %f] [Flowcount: %d] [LAN Rtt: %f]\n", delayTotal, flowCount, mean)
+	if args.StatsOut {
+		fmt.Printf("All Flows: [delayTotal: %f] [Flowcount: %d] [LAN Rtt: %f]\n", delayTotal, flowCount, mean)
 	}
 }
 
@@ -91,8 +91,8 @@ func CalculateAggregateAverages(deviceFlows map[string][]float64, args *loader.A
 }
 
 func logAggregateStats(args *loader.Args, devicesCount int, aggregatedMean float64) {
-	if args.StatsStdOut {
-		log.Printf("Aggregated Per Device: [Total Device Count: %v] [Aggregated Mean LAN Rtt: %v]\n", devicesCount, aggregatedMean)
+	if args.StatsOut {
+		fmt.Printf("Aggregated Per Device: [Total Device Count: %v] [Aggregated Mean LAN Rtt: %v]\n", devicesCount, aggregatedMean)
 	}
 }
 

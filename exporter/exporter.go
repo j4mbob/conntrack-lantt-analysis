@@ -1,7 +1,7 @@
 package exporter
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,12 +51,14 @@ func StartPromEndPoint(options ExporterOpts) *prometheus.Registry {
 		if !options.UseSSL {
 			err := http.ListenAndServe(":"+options.Port, nil)
 			if err != nil {
-				log.Panicf("error starting exporter listener: %s\n", err)
+				fmt.Printf("error starting exporter listener: %v\n", err)
+				panic(1)
 			}
 		} else {
 			err := http.ListenAndServeTLS(":"+options.Port, options.SSLCert, options.SSLKey, nil)
 			if err != nil {
-				log.Panicf("error starting exporter listener: %s\n", err)
+				fmt.Printf("error starting exporter listener: %v\n", err)
+				panic(1)
 			}
 		}
 	}(reg)

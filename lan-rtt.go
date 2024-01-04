@@ -9,9 +9,9 @@ import (
 
 func main() {
 
-	args, promMetrics, pidFile := loader.Startup()
+	args, promMetrics := loader.Startup()
 	conntrack.Poller(args, promMetrics)
 
-	defer os.Remove(pidFile)
+	defer os.Remove(args.PidFile)
 
 }

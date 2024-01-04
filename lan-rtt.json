@@ -1,14 +1,17 @@
 {
-        "network": "10.152.0.2",
-        "subnetmask": "255.255.240.0",
+        "network": "192.168.0.0",
+        "subnetmask": "255.255.255.0",
         "runcontinuous": true,
         "statsperiod": 5,
         "buffersize": 2000,
         "pollingtime": 300,
         "promport": "1986",
-        "conntrackstdout": false,
-        "statsstdout": true,
-        "sslcert": "/etc/letsencrypt/live/gw.nurturhouse.nurtur.ask4.co.uk/fullchain.pem",
-        "sslkey": "/etc/letsencrypt/live/gw.nurturhouse.nurtur.ask4.co.uk/privkey.pem",
-        "nossl": true
+        "debug": false,
+        "statsout": false,
+        "sslcert": "fullchain.pem",
+        "sslkey": "privkey.pem",
+        "usessl": false,
+        "pyroscope": true,
+        "pyroscopehost": "http://pyroscope-host:4040",
+        "pidfile": "/run/lanrtt.pid"
 }
